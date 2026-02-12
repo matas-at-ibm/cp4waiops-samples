@@ -253,7 +253,7 @@ Cognos Analytics also provides several great dashboard and report examples that 
 ### Using AIOps Insights
 We also offer a deployable AIOps Insights dashboard that does require real data. 
 
-Guidance of deployment and use can be followed [here](https://github.com/IBM/cp4waiops-samples/blob/main/aiops-cognos-analytics/aiops-insights/README.md).
+Guidance of deployment and use can be followed [here](../aiops-insights/README.md).
 
 ### Connecting to your Db2 instance
 On the Cognos side, you will first need to connect to your Db2 datasource. To achieve this:
