@@ -1,0 +1,22 @@
+{
+  "TENANTID": "cfd95b7e-3bc7-4006-a4a8-a73a79c71255",
+  "UUID": $join(["cfd95b7e-3bc7-4006-a4a8-a73a79c71255", incident.id], "_"),
+  "ID": incident.id,
+  "CREATEDTIME": incident.createdTime,
+  "CREATEDBY": incident.createdBy,
+  "TITLE": incident.title,
+  "DESCRIPTION": incident.description,
+  "PRIORITY": incident.priority,
+  "STATE": incident.state,
+  "LASTCHANGEDTIME": incident.lastChangedTime,
+  "OWNER": incident.owner,
+  "TEAM": incident.team,
+  "ALERTS": $count(incident.contextualAlertIds) + $count(incident.alertIds),
+  "ALERTIDS": $join($append(incident.alertIds, incident.contextualAlertIds), ','),
+  "SIMILARINCIDENTS": $count(incident.insights[type="aiops.ibm.com/insight-type/similar-storys"].details.similar_incidents),
+  "PROBABLECAUSEALERTS": $count(incident.insights[type="aiops.ibm.com/insight-type/probable-cause"]),
+  "TICKETS": $count(incident.insights[type="aiops.ibm.com/insight-type/itsm/metadata"]),
+  "CHATOPSINTEGRATIONS": $count(incident.insights[type="aiops.ibm.com/insight-type/chatops/metadata"]),
+  "RESOURCEID": incident.insights[type="aiops.ibm.com/insight-type/topology/resource"].details.id,
+  "POLICYID": incident.insights[type="aiops.ibm.com/insight-type/proposed-by"].details.policyId
+}

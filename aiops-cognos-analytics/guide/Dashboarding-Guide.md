@@ -178,6 +178,7 @@ The steps, scripts, and examples/assets for linking the two can be found in our 
 2. **Widgets** - These are AIOps widgets that can be used in Cognos.
 3. **Schemas** - These are the out of the box database schemas for Alerts and Incidents, for use with DB2 and for dashboarding and reporting purposes within Cognos.
 4. **Examples** - These are the out of the box example dashboards/assets for Cognos.
+4. **AIOps Insights** - A deployable dashboard that replicates AIOps Insights capability inside Cognos.
 
 Follow the respective Readme files in each section to setup Cognos and AIOps to work together. For the examples, you can read the section further through this guide for more detailed information.
 
@@ -248,6 +249,11 @@ The AIOps example dashboards are configured to use the mock data by default. To 
 2. Follow the [relinking guidance](https://github.com/IBM/cp4waiops-samples/blob/main/aiops-cognos-analytics/examples/README.md#13-example-dashboards-use-mock-data-by-default-to-use-your-own-live-data-with-the-examples)
 
 Cognos Analytics also provides several great dashboard and report examples that you can use for inspiration. The [documentation](https://www.ibm.com/docs/en/cognos-analytics/12.1.x?topic=samples-cognos-analytics-base) provides guidance on how to import these. The process is very similar to the AIOps import process.
+
+### Using AIOps Insights
+We also offer a deployable AIOps Insights dashboard that does require real data. 
+
+Guidance of deployment and use can be followed [here](https://github.com/IBM/cp4waiops-samples/blob/main/aiops-cognos-analytics/aiops-insights/README.md).
 
 ### Connecting to your Db2 instance
 On the Cognos side, you will first need to connect to your Db2 datasource. To achieve this:

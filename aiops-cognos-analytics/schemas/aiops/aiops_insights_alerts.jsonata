@@ -1,0 +1,35 @@
+{
+  "ID": alert.id,
+  "TENANTID": "cfd95b7e-3bc7-4006-a4a8-a73a79c71255",
+  "UUID": $join(["cfd95b7e-3bc7-4006-a4a8-a73a79c71255", alert.id], "_"),
+  "SEVERITY": alert.severity,
+  "BUSINESSCRITICALITY": $join(alert.insights[type="aiops.ibm.com/insight-type/business/criticality"].details.criticalityLabel, ','),
+  "STATE": alert.state,
+  "SUMMARY": alert.summary,
+  "EVENTTYPE": alert.type.classification,
+  "SENDER": alert.sender.name,
+  "RESOURCE": alert.resource.name,
+  "FIRSTOCCURRENCETIME": alert.firstOccurrenceTime,
+  "LASTOCCURRENCETIME": alert.lastOccurrenceTime,
+  "RUNBOOKS": $count(alert.insights[type="aiops.ibm.com/insight-type/runbook"]),
+  "TOPOLOGY": $count(alert.insights[type="aiops.ibm.com/insight-type/topology/resource"]),
+  "SEASONAL": $count(alert.insights[type="aiops.ibm.com/insight-type/seasonal-occurrence"].details[isSeasonal=true]),
+  "ININCIDENT": $count(alert.relatedContextualStoryIds) + $count(alert.relatedStoryIds),
+  "SUPPRESSED": $number(alert.suppressed),
+  "GOLDENSIGNAL": $join([alert.insights[type="aiops.ibm.com/insight-type/golden-signal"].details.goldenSignal], ","),
+  "ACKNOWLEDGED": $number(alert.acknowledged),
+  "OWNER": alert.owner,
+  "TEAM": alert.team,
+  "EVENTCOUNT": alert.eventCount,
+  "LASTSTATECHANGETIME": alert.lastStateChangeTime,
+  "RESOURCEGROUPIDS": $join($map(alert.insights[type="aiops.ibm.com/insight-type/topology/group"], function($resourceGroup)  {
+   $split($resourceGroup.id, "#")[0]
+  }), ","),
+  "RESOURCEGROUPDETAILS": $join($map(alert.insights[type="aiops.ibm.com/insight-type/topology/group"], function($resourceGroup)  {
+     $join([
+      $resourceGroup.details.name, 
+      $exists($resourceGroup.details.tags) ? $join($resourceGroup.details.tags, "</-/>") : "", 
+      $exists($resourceGroup.details.entityTypes) ? $join($resourceGroup.details.entityTypes, "</+/>") : ""
+    ], "</*/>")
+  }), "</=/>")
+}
