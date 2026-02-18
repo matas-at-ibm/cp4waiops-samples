@@ -16,6 +16,8 @@ To setup the pre-requisites for AIOps CA Insights Dashboard, a 3 part process ne
 
 #### Setup Db2 AIOps schema
 > The process documented here is very similar to the [Installing](../schemas/README.md#installing) section. With the addition of [schemas/db2/additional/aiops_insights.sql](../schemas/db2/additional/aiops_insights.sql).
+> NOTE: When executing `db2/additional/aiops_insights.sql` script, the output may display warnings such `"<view>" may not be used to 
+optimize the processing of queries.  SQLSTATE=01633`. This is the expected output and the script is working as intended.
 
 The AIOps Insights schema was designed to work with existing Reporter schema for alerts and incidents defined here [schemas/db2](../schemas/db2). The file [additional/aiops_insights.sql](../schemas/db2/additional/aiops_insights.sql) is an additive sql script that MUST only be executed post-deployment of the Reporter schema scripts as it depends on the Reporter schema established tables. Therefore if the schema is already setup please proceed to [Addition of AIOps Insights Scheme](#addition-of-aiops-insights-scheme) section.
 Otherwise procced with the rest of this section.
@@ -23,6 +25,8 @@ Otherwise procced with the rest of this section.
 The complete process requires the schema scripts from the [schemas/db2](../schemas/db2) and file [additional/aiops_insights.sql](../schemas/db2/additional/aiops_insights.sql) to be copied over to the machine hosting Db2. 
 Then the creation scripts must be sequentially executed as detailed below(instructions assume that db2 directory has been copied over as the db2 directory on the Db2 hosting machien ):
 ```
+db2 SET CURRENT SCHEMA <SCHEMA_NAME>
+db2 SET CURRENT PATH <SCHEMA_NAME>
 
 db2 -td@ -vf db2/reporter_aiops_alerts.sql
 
@@ -41,6 +45,8 @@ db2 -td@ -vf db2/additional/aiops_insights.sql
 The script file - [db2/additional/aiops_insights.sql](../schemas/db2/additional/aiops_insights.sql) must be copied over to the machine hosting db2. The creation script should be executed as detailed below(instructions assume that scripts have been copied to `db2/additional` directory):
 
 ```
+db2 SET CURRENT SCHEMA <SCHEMA_WHERE_EXISTING_SCHEMA_RESIDES>
+db2 SET CURRENT PATH <SCHEMA_WHERE_EXISTING_SCHEMA_RESIDES>
 
 db2 -td@ -vf db2/additional/aiops_insights.sql
 
@@ -56,6 +62,8 @@ AIOps Insights schema makes use of Db2 <b>Administrative Task Scheduler</b> to o
 In the case that the schema needs to be deleted. The removal script can be executed as detailed below: 
 
 ```
+db2 SET CURRENT SCHEMA <SCHEMA_WHERE_EXISTING_SCHEMA_RESIDES>
+db2 SET CURRENT PATH <SCHEMA_WHERE_EXISTING_SCHEMA_RESIDES>
 
 db2 -td@ -vf db2/additional/aiops_insights_remove.sql
 
