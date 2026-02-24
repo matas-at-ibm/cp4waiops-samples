@@ -9,6 +9,8 @@ AIOps Insights CA dashboard is a rendition of the [AIOps Insights](https://www.i
 ### Pre-requisites 
 > Unlike the example dashboards documented in the [examples directory](../examples/), the AIOps CA Insights dashboard requires real AIOps data to populate its visualizations. And while the dashboard can be installed without data present, it will be in an errorneous state until the data module is linked to a Db2 instance. It's highly recommended that you complete the steps outlined in this section before continuing with installation.
 
+> DISCLAIMER: The Db2 user that any database actions are to be performed with must have the DBADM authority. The section [Db2 modifications](#db2-modifications) outlines the reasoning for this.
+ 
 To set up the pre-requisites for AIOps CA Insights Dashboard, a 3 part process needs to be followed:
 1. Set up Db2 schema
 2. Set up Db2 Data Server in Cognos Analytics 
@@ -72,9 +74,11 @@ db2 -td@ -vf db2/additional/aiops_insights_remove.sql
 #### Set up Db2 Data Server in Cognos Analytics 
 If not already done, Set up the Db2 Data Server as documented in the [Connecting to your Db2 instance](../guide/Dashboarding-Guide.md#connecting-to-your-db2-instance).
 
+If you have already set up the Db2 Data Server, you will need to repeat the steps listed in [Connecting to your Db2 instance](../guide/Dashboarding-Guide.md#connecting-to-your-db2-instance), 7 though 10.
+
 
 #### Create AIOps dashboard policies for incidents and alerts or adjust existing dashboard policies 
-If AIOps dashboard policies for alerts and incidents have already been created then proceed to [Adjusting existing AIOps dashboard policies](#adjusting-existing-dashboard-policies) section. Otherwise, proceed with the rest of this section.
+If AIOps dashboard policies for alerts and incidents have already been created then proceed to [Adjusting existing AIOps dashboard policies](#adjusting-existing-aiops-dashboard-policies) section. Otherwise, proceed with the rest of this section.
 
 Creating a new dashboard policy is a painless process documented in the [Configuring a dashboard or report policy](../guide/Dashboarding-Guide.md#configuring-a-dashboard-or-report-policy). But will first require the set up of Db2 integration as documented in [Connecting AIOps to DB2](../guide/Dashboarding-Guide.md#connecting-aiops-to-db2).
 
@@ -101,11 +105,10 @@ Click "Edit parameter mapping". Replacing the JSONata content in the top right c
 #### Adjusting existing AIOps dashboard policies
 > IMPORTANT: for any existing policies, ensure that they trigger for both creation and updates of alerts/incidents data. This can be achieved via policy triggers by selecting the `alert.lastStateChangeTime` as the property to trigger if it changes for alerts and `incident.lastChangedTime` for incidents.
 
-If dashboard policies have been set up as per the [Using the schemas](../schemas/README.md#using-the-schemas).
+If dashboard policies have been set up as per the [Using the schemas](../schemas/README.md#using-the-schemas). Then the respective policies for exporting alert and incident data will need their parameter mappings adjusted. Starting with the alert policy, open the policy editor screen and scroll down to the "Populate an external database" section. Select the relevant Db2 integration and the `ALERTS_REPORTER_STATUS` table. Choose to `Customize` the parameter mapping:
+![](./images/customize-parameter-mapping.png)
 
-Then the respective policies for exporting alert and incident data will need their parameter mappings adjusted. 
-
-For policy acting on alerts, edit the parameter mapping to include the following column mappings:
+Edit the parameter mapping to include the following column mappings:
 ```
   ...
   "RESOURCEGROUPIDS": $join($map(alert.insights[type="aiops.ibm.com/Insights-type/topology/group"], function($resourceGroup)  {
@@ -120,7 +123,7 @@ For policy acting on alerts, edit the parameter mapping to include the following
   }), "</=/>")
 ```
 
-For policy acting on incidents, edit the parameter mapping to include the following column mappings:
+For policy acting on incidents, repeat the above steps to get to the parameter mapping editor. Edit the parameter mapping to include the following column mappings:
 ```
   ...
   "ALERTIDS": $join($append(incident.alertIds, incident.contextualAlertIds), ',')
