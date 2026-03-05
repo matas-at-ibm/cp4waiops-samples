@@ -366,10 +366,6 @@ BEGIN
 	DECLARE currentResourceGroupId VARCHAR(255);
   DECLARE currentResourceGroupsDetails CLOB;
   DECLARE currentResourceGroupExists INTEGER;
-
-  DELETE 
-  FROM ALERTS_RESOURCE_GROUPS_RELATIONS
-  WHERE ALERTUUID = inContextAlertUuid;
   
   WHILE (LOCATE(',', resourceGroupIdsToAssociate) > 0) DO 
 	  SET currentResourceGroupId = CAST(SUBSTR(resourceGroupIdsToAssociate, 1, (LOCATE(',', resourceGroupIdsToAssociate) -1)) AS VARCHAR(255));
