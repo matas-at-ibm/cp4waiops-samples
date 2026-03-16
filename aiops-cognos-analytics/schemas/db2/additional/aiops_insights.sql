@@ -151,6 +151,7 @@ COMMIT WORK@
 CREATE TABLE RESOURCE_GROUPS  (
 	UUID VARCHAR(255) NOT NULL, 
 	NAME VARCHAR(255) NOT NULL,
+	ENCODEDREPRESENTATION CLOB NOT NULL,
 	PRIMARY KEY (UUID)
 )@
 --DATA CAPTURE NONE@
@@ -218,12 +219,11 @@ CREATE TABLE RESOURCE_GROUP_ENTITYTYPES  (
 -- DDL Statements for Table "ALERTS_RESOURCE_GROUPS_RELATIONS"
 ------------------------------------------------
  
-
 CREATE TABLE ALERTS_RESOURCE_GROUPS_RELATIONS  (
 	ALERTUUID VARCHAR(255) NOT NULL, 
 	RESOURCEGROUPID VARCHAR(255) NOT NULL,
-	FOREIGN KEY (ALERTUUID) REFERENCES ALERTS_REPORTER_STATUS(UUID) ON DELETE CASCADE,
-	FOREIGN KEY (RESOURCEGROUPID) REFERENCES RESOURCE_GROUPS(UUID) ON DELETE CASCADE
+	FOREIGN KEY (RESOURCEGROUPID) REFERENCES RESOURCE_GROUPS(UUID) ON DELETE CASCADE,
+	FOREIGN KEY (ALERTUUID) REFERENCES ALERTS_REPORTER_STATUS(UUID) ON DELETE CASCADE
 )@
 --DATA CAPTURE NONE@
 
@@ -231,7 +231,8 @@ CREATE TABLE ALERTS_RESOURCE_GROUPS_RELATIONS  (
 -- DDL Statements for Table "INCIDENTS_ALERTS_RELATIONS"
 ------------------------------------------------
  
-
+-- Can't create an FK on ALERTS_REPORTER_STATUS(ALERTUUID - UUID) as the alert
+-- rows are not yet guaranteed to exist in ALERTS_REPORTER_STATUS upon insert into INCIDENTS_REPORTER_STATUS
 CREATE TABLE INCIDENTS_ALERTS_RELATIONS (
 	INCIDENTUUID VARCHAR(255) NOT NULL, 
 	ALERTUUID VARCHAR(255) NOT NULL,
@@ -243,223 +244,195 @@ CREATE TABLE INCIDENTS_ALERTS_RELATIONS (
 -- DDL Statements for Stored Procedures
 ---------------------------------
 
-
-CREATE PROCEDURE CREATE_INCIDENTS_ALERTS_RELATIONS(IN tenantId VARCHAR(64), IN newIncidentId VARCHAR(255), IN alertIdsToAssociate CLOB)
+CREATE OR REPLACE PROCEDURE SHIFT_ENCODED_DATA(INOUT encodedString CLOB, OUT decodedValue CLOB, IN delimeter VARCHAR(5), delimeterLength SMALLINT)
 LANGUAGE SQL
 MODIFIES SQL DATA
-BEGIN
+NO EXTERNAL ACTION
+BEGIN ATOMIC
+	DECLARE pos SMALLINT;
 	
-	DECLARE currentAlertId VARCHAR(255);
-
-	DECLARE lastAlertId VARCHAR(255);
+	SET pos = LOCATE(delimeter, encodedString);
 	
-	
-	WHILE (LOCATE(',', alertIdsToAssociate) > 0) DO 
-		    SET
-		currentAlertId = CONCAT(CONCAT(tenantId, '_'), CAST(SUBSTR(alertIdsToAssociate, 1, (LOCATE(',', alertIdsToAssociate) -1)) AS VARCHAR(255)));
-		
-		
-		INSERT
-		    INTO
-		    INCIDENTS_ALERTS_RELATIONS (INCIDENTUUID,
-		    ALERTUUID)
-		VALUES (newIncidentId,
-		currentAlertId);
-		
-		
-		SET
-		alertIdsToAssociate = SUBSTR(alertIdsToAssociate, (LOCATE(',', alertIdsToAssociate) + 1));
-		
-	END WHILE;
-	
-	
-	SET
-	lastAlertId = CONCAT(CONCAT(tenantId, '_'), CAST(alertIdsToAssociate AS VARCHAR(255)));
-	
-	
-	INSERT
-	    INTO
-	    INCIDENTS_ALERTS_RELATIONS (INCIDENTUUID,
-	    ALERTUUID)
-	VALUES (newIncidentId,
-	lastAlertId);
-
+	IF pos > 0 THEN
+		SET decodedValue = SUBSTR(encodedString, 1, (LOCATE(delimeter, encodedString) -1));
+		SET encodedString = SUBSTR(encodedString, (LOCATE(delimeter, encodedString) + delimeterLength));
+	ELSE
+		SET decodedValue = encodedString;
+		SET encodedString = '';
+	END IF;
 END@
 
-CREATE PROCEDURE DELETE_INCIDENTS_ALERTS_RELATIONS(IN incidentId VARCHAR(255))
+CREATE OR REPLACE PROCEDURE PROCESS_ALERT_RESOURCE_GROUP(IN newResourceGroupId VARCHAR(255), IN resourceGroupsDetails CLOB)
 LANGUAGE SQL
 MODIFIES SQL DATA
+AUTONOMOUS
 BEGIN
-	DELETE
-	FROM
-			INCIDENTS_ALERTS_RELATIONS
-	WHERE
-			INCIDENTUUID = incidentId;
-END@
-
-CREATE PROCEDURE PROCESS_ALERT_RESOURCE_GROUP(IN newResourceGroupId VARCHAR(255), IN resourceGroupsDetails CLOB)
-LANGUAGE SQL
-MODIFIES SQL DATA
-BEGIN
-  DECLARE currrentResourceGroupName VARCHAR(255);
-  DECLARE currrentResourceGroupEntityType VARCHAR(255);
-  DECLARE currrentResourceGroupTag VARCHAR(255);
-
-  -- Format of <resourceGroupsDetails>
-  -- Service front-end-svc.myapp.example.com to service to database to hypervisor</*/>tag-1</-/>tag-2</*/>waiopsApplication</+/>resourceGroup
+  	DECLARE shiftedResourceGroupName CLOB;
+		DECLARE shiftedResourceGroupTag CLOB;
+  	DECLARE shiftedResourceGroupEntityType CLOB;
+  	DECLARE encodedResourceGroupDetails CLOB;
   
-	SET currrentResourceGroupName = CAST(SUBSTR(resourceGroupsDetails, 1, (LOCATE('</*/>', resourceGroupsDetails) -1)) AS VARCHAR(255));
-  INSERT INTO RESOURCE_GROUPS (UUID, NAME)
-  VALUES (newResourceGroupId, currrentResourceGroupName);
-
-  -- remove the name part from resourceGroupsDetails
-	SET resourceGroupsDetails = SUBSTR(resourceGroupsDetails, (LOCATE('</*/>', resourceGroupsDetails) + 5));
-
-  -- iterate through the tags in the details
-	WHILE (LOCATE('</-/>', resourceGroupsDetails) > 0) DO 
-	  SET currrentResourceGroupTag = CAST(SUBSTR(resourceGroupsDetails, 1, (LOCATE('</-/>', resourceGroupsDetails) -1)) AS VARCHAR(255));
-    
-    INSERT INTO RESOURCE_GROUP_TAGS (RESOURCEGROUPUUID, TAG)
-    VALUES (newResourceGroupId, currrentResourceGroupTag);
-
-    SET resourceGroupsDetails = SUBSTR(resourceGroupsDetails, (LOCATE('</-/>', resourceGroupsDetails) + 5));
-
-  END WHILE;
-
-  -- extract and insert the last tag not captured by the loop above
-	SET currrentResourceGroupTag = CAST(SUBSTR(resourceGroupsDetails, 1, (LOCATE('</*/>', resourceGroupsDetails) -1)) AS VARCHAR(255));
-
-
-  IF currrentResourceGroupTag <> '' THEN
-    INSERT INTO RESOURCE_GROUP_TAGS (RESOURCEGROUPUUID, TAG)
-    VALUES (newResourceGroupId, currrentResourceGroupTag);
-  END IF;
-
-  -- remove the last tag from the details string
-	SET resourceGroupsDetails = SUBSTR(resourceGroupsDetails, (LOCATE('</*/>', resourceGroupsDetails) + 5));
-
-  -- iterate through the entity types in the details
-	WHILE (LOCATE('</+/>', resourceGroupsDetails) > 0) DO 
-		SET currrentResourceGroupEntityType = CAST(SUBSTR(resourceGroupsDetails, 1, (LOCATE('</+/>', resourceGroupsDetails) -1)) AS VARCHAR(255));
-
-
-    INSERT INTO RESOURCE_GROUP_ENTITYTYPES (RESOURCEGROUPUUID, ENTITYTYPE)
-    VALUES (newResourceGroupId, currrentResourceGroupEntityType);
-
-    SET resourceGroupsDetails = SUBSTR(resourceGroupsDetails, (LOCATE('</+/>', resourceGroupsDetails) + 5));
-
-  END WHILE;
-
-  -- insert the last entity type not captured by the loop above
-	IF resourceGroupsDetails <> '' THEN
-		INSERT INTO RESOURCE_GROUP_ENTITYTYPES (RESOURCEGROUPUUID, ENTITYTYPE)
-    VALUES (newResourceGroupId, resourceGroupsDetails);
-  END IF;
-
-END@
-
-
-CREATE PROCEDURE CREATE_ALERTS_RESOURCE_GROUPS_RELATIONS(IN inContextAlertUuid VARCHAR(255), IN resourceGroupIdsToAssociate CLOB, IN resourceGroupDetailsToAssociate CLOB)
-LANGUAGE SQL
-MODIFIES SQL DATA
-BEGIN
-	DECLARE currentResourceGroupId VARCHAR(255);
-  DECLARE currentResourceGroupsDetails CLOB;
-  DECLARE currentResourceGroupExists INTEGER;
+  	SET encodedResourceGroupDetails = resourceGroupsDetails;
   
-  WHILE (LOCATE(',', resourceGroupIdsToAssociate) > 0) DO 
-	  SET currentResourceGroupId = CAST(SUBSTR(resourceGroupIdsToAssociate, 1, (LOCATE(',', resourceGroupIdsToAssociate) -1)) AS VARCHAR(255));
-    SET currentResourceGroupsDetails = SUBSTR(resourceGroupDetailsToAssociate, 1, (LOCATE('</=/>', resourceGroupDetailsToAssociate) -1));
+  	-- Format of <resourceGroupsDetails>
+  	-- Service front-end-svc.myapp.example.com to service to database to hypervisor</*/>tag-1</-/>tag-2</*/>waiopsApplication</+/>resourceGroup
+  	CALL SHIFT_ENCODED_DATA(encodedResourceGroupDetails, shiftedResourceGroupName, '</*/>', 5);
+  	INSERT INTO RESOURCE_GROUPS (UUID, NAME, ENCODEDREPRESENTATION) VALUES (newResourceGroupId, CAST(shiftedResourceGroupName AS VARCHAR(255)), resourceGroupsDetails);
 
-    SET currentResourceGroupExists = (
-      SELECT COUNT(UUID)
-      FROM RESOURCE_GROUPS
-      WHERE UUID = currentResourceGroupId
-		);
+  	-- iterate through the tags in the details
+  	WHILE (LOCATE('</-/>', encodedResourceGroupDetails) > 0) DO 
+			CALL SHIFT_ENCODED_DATA(encodedResourceGroupDetails, shiftedResourceGroupTag, '</-/>', 5);
+    	INSERT INTO RESOURCE_GROUP_TAGS (RESOURCEGROUPUUID, TAG) VALUES (newResourceGroupId, CAST(shiftedResourceGroupTag AS VARCHAR(255)));
+  	END WHILE;
+	
+  	-- the loop above will miss the last tag due to format of the encoded string
+		-- need statements below to record the last tag
+  	CALL SHIFT_ENCODED_DATA(encodedResourceGroupDetails, shiftedResourceGroupTag, '</*/>', 5);
+  	INSERT INTO RESOURCE_GROUP_TAGS (RESOURCEGROUPUUID, TAG) VALUES (newResourceGroupId, CAST(shiftedResourceGroupTag AS VARCHAR(255)));
 
-    IF currentResourceGroupExists < 1 THEN 
-			CALL PROCESS_ALERT_RESOURCE_GROUP(currentResourceGroupId, currentResourceGroupsDetails);
-
-    END IF;
-
-    INSERT INTO ALERTS_RESOURCE_GROUPS_RELATIONS (ALERTUUID, RESOURCEGROUPID) VALUES (inContextAlertUuid, currentResourceGroupId);
-
-    SET resourceGroupIdsToAssociate = SUBSTR(resourceGroupIdsToAssociate, (LOCATE(',', resourceGroupIdsToAssociate) + 1));
-    SET resourceGroupDetailsToAssociate = SUBSTR(resourceGroupDetailsToAssociate, (LOCATE('</=/>', resourceGroupDetailsToAssociate) + 5));
-
-  END WHILE;
-
-  SET currentResourceGroupExists = (
-    SELECT COUNT(UUID)
-    FROM RESOURCE_GROUPS
-    WHERE UUID = resourceGroupIdsToAssociate
-  );
-
-
-  IF currentResourceGroupExists < 1 THEN 
-    CALL PROCESS_ALERT_RESOURCE_GROUP(resourceGroupIdsToAssociate, resourceGroupDetailsToAssociate);
-    
-  END IF;
-
-  INSERT INTO ALERTS_RESOURCE_GROUPS_RELATIONS (ALERTUUID, RESOURCEGROUPID) VALUES (inContextAlertUuid, resourceGroupIdsToAssociate);
-
-END@
-
-
-CREATE PROCEDURE DELETE_ALERTS_RESOURCE_GROUPS_RELATIONS(IN alertId VARCHAR(255))
-LANGUAGE SQL
-MODIFIES SQL DATA
-BEGIN
-	DELETE
-	FROM
-			ALERTS_RESOURCE_GROUPS_RELATIONS
-	WHERE
-			ALERTUUID = alertId;
+  	-- iterate through the entity types in the details
+  	WHILE LENGTH(encodedResourceGroupDetails) > 0 DO 
+  		CALL SHIFT_ENCODED_DATA(encodedResourceGroupDetails, shiftedResourceGroupEntityType, '</+/>', 5);
+  		INSERT INTO RESOURCE_GROUP_ENTITYTYPES (RESOURCEGROUPUUID, ENTITYTYPE) VALUES (newResourceGroupId, CAST(shiftedResourceGroupEntityType AS VARCHAR(255)));
+  	END WHILE;
 END@
 
 -------------------------------
 -- DDL Statements for Triggers
 -------------------------------
 
-
-CREATE TRIGGER CREATE_ALERTS_TO_RESOURCE_GROUPS_TRIGGER
+CREATE OR REPLACE TRIGGER CREATE_ALERTS_TO_RESOURCE_GROUPS_TRIGGER
 AFTER INSERT ON ALERTS_REPORTER_STATUS
 REFERENCING NEW AS N
 FOR EACH ROW
-WHEN (N.RESOURCEGROUPIDS <> '')
+WHEN (COALESCE(N.RESOURCEGROUPIDS, '') <> '')
 BEGIN ATOMIC
-  CALL CREATE_ALERTS_RESOURCE_GROUPS_RELATIONS(N.UUID, N.RESOURCEGROUPIDS, N.RESOURCEGROUPDETAILS);
+  DECLARE shiftedResourceGroupId CLOB;
+  DECLARE shiftedResourceGroupIdBounded VARCHAR(255);
+  DECLARE resourceGroupIdsToDecode CLOB;
+  DECLARE shiftedResourceGroupDetails CLOB;
+  DECLARE resourceGroupDetailsToDecode CLOB;
+  DECLARE existingGroupsEncodedRepresentation CLOB;
+	DECLARE shiftedResourceGroupExists CLOB;
+
+  SET resourceGroupIdsToDecode = N.RESOURCEGROUPIDS;
+  SET resourceGroupDetailsToDecode = N.RESOURCEGROUPDETAILS;
+	
+  	
+  WHILE LENGTH(resourceGroupIdsToDecode) > 0 DO 
+  	CALL SHIFT_ENCODED_DATA(resourceGroupIdsToDecode, shiftedResourceGroupId, ',', 1);
+  	CALL SHIFT_ENCODED_DATA(resourceGroupDetailsToDecode, shiftedResourceGroupDetails, '</=/>', 5);
+  	
+  	SET shiftedResourceGroupIdBounded = CAST(shiftedResourceGroupId AS VARCHAR(255));
+  	
+  	SET shiftedResourceGroupExists = (
+			SELECT ENCODEDREPRESENTATION 
+			FROM RESOURCE_GROUPS 
+      WHERE UUID = shiftedResourceGroupIdBounded 
+	  	LIMIT 1
+    );
+    
+		IF shiftedResourceGroupExists IS NULL OR (shiftedResourceGroupExists <> shiftedResourceGroupDetails) THEN
+			IF (shiftedResourceGroupExists IS NOT NULL) THEN
+				DELETE FROM RESOURCE_GROUPS WHERE UUID = shiftedResourceGroupIdBounded;
+			END IF;
+
+    	CALL PROCESS_ALERT_RESOURCE_GROUP(shiftedResourceGroupIdBounded, shiftedResourceGroupDetails);
+    END IF;
+  
+  	INSERT INTO ALERTS_RESOURCE_GROUPS_RELATIONS (ALERTUUID, RESOURCEGROUPID) VALUES (N.UUID, shiftedResourceGroupIdBounded);
+  	
+  END WHILE;
+
 END@
 
 
-CREATE TRIGGER CREATE_INCIDENTS_TO_ALERTS_TRIGGER
-AFTER INSERT ON INCIDENTS_REPORTER_STATUS
+CREATE OR REPLACE TRIGGER UPDATE_ALERTS_TO_RESOURCE_GROUPS_TRIGGER
+AFTER UPDATE ON ALERTS_REPORTER_STATUS
 REFERENCING NEW AS N
 FOR EACH ROW
 BEGIN ATOMIC
-	CALL CREATE_INCIDENTS_ALERTS_RELATIONS(N.TENANTID, N.UUID, N.ALERTIDS);
+	DECLARE shiftedResourceGroupId CLOB;
+	DECLARE shiftedResourceGroupIdBounded VARCHAR(255);
+	DECLARE resourceGroupIdsToDecode CLOB;
+	DECLARE shiftedResourceGroupDetails CLOB;
+	DECLARE resourceGroupDetailsToDecode CLOB;
+	DECLARE existingGroupsEncodedRepresentation CLOB;
+	DECLARE shiftedResourceGroupExists CLOB;
+  
+	SET resourceGroupIdsToDecode = N.RESOURCEGROUPIDS;
+	SET resourceGroupDetailsToDecode = N.RESOURCEGROUPDETAILS;
+	
+	DELETE FROM ALERTS_RESOURCE_GROUPS_RELATIONS WHERE ALERTUUID = N.UUID;
+
+	IF COALESCE(N.RESOURCEGROUPIDS, '') <> '' THEN
+		WHILE LENGTH(resourceGroupIdsToDecode) > 0 DO 
+			CALL SHIFT_ENCODED_DATA(resourceGroupIdsToDecode, shiftedResourceGroupId, ',', 1);
+			CALL SHIFT_ENCODED_DATA(resourceGroupDetailsToDecode, shiftedResourceGroupDetails, '</=/>', 5);
+  	
+			SET shiftedResourceGroupIdBounded = CAST(shiftedResourceGroupId AS VARCHAR(255));
+	
+			SET shiftedResourceGroupExists = (
+				SELECT ENCODEDREPRESENTATION 
+				FROM RESOURCE_GROUPS 
+				WHERE UUID = shiftedResourceGroupIdBounded 
+				LIMIT 1
+			);
+	
+    
+    	IF shiftedResourceGroupExists IS NULL OR (shiftedResourceGroupExists <> shiftedResourceGroupDetails) THEN
+				IF (shiftedResourceGroupExists IS NOT NULL) THEN
+					DELETE FROM RESOURCE_GROUPS WHERE UUID = shiftedResourceGroupIdBounded;
+				END IF;
+				
+				CALL PROCESS_ALERT_RESOURCE_GROUP(shiftedResourceGroupIdBounded, shiftedResourceGroupDetails);
+			END IF;
+  
+  		INSERT INTO ALERTS_RESOURCE_GROUPS_RELATIONS (ALERTUUID, RESOURCEGROUPID) VALUES (N.UUID, shiftedResourceGroupIdBounded);
+  	
+  	END WHILE;
+	END IF;
+
 END@
 
 
-CREATE TRIGGER UPDATE_ALERTS_TO_RESOURCE_GROUPS_TRIGGER
-AFTER UPDATE ON ALERTS_REPORTER_STATUS
-REFERENCING NEW AS N OLD AS O
+CREATE OR REPLACE TRIGGER CREATE_INCIDENTS_TO_ALERTS_TRIGGER
+AFTER INSERT ON INCIDENTS_REPORTER_STATUS
+REFERENCING NEW AS N
 FOR EACH ROW
-WHEN ( O.RESOURCEGROUPIDS <> N.RESOURCEGROUPIDS )
+WHEN (COALESCE(N.ALERTIDS, '') <> '')
 BEGIN ATOMIC
-	CALL DELETE_ALERTS_RESOURCE_GROUPS_RELATIONS(O.UUID);
-  CALL CREATE_ALERTS_RESOURCE_GROUPS_RELATIONS(N.UUID, N.RESOURCEGROUPIDS, N.RESOURCEGROUPDETAILS);
+	DECLARE shiftedAlertId CLOB;
+	DECLARE alertIdsToDecode CLOB;
+	
+	SET alertIdsToDecode = N.ALERTIDS;
+	
+	WHILE LENGTH(alertIdsToDecode) > 0 DO
+		CALL SHIFT_ENCODED_DATA(alertIdsToDecode, shiftedAlertId, ',', 1);
+		INSERT INTO INCIDENTS_ALERTS_RELATIONS (INCIDENTUUID, ALERTUUID) VALUES (N.UUID, CAST(CONCAT(CONCAT(tenantId, '_'), shiftedAlertId) AS VARCHAR(255)));
+	END WHILE;
 END@
 
 
-CREATE TRIGGER UPDATE_INCIDENTS_TO_ALERTS_TRIGGER
-AFTER UPDATE ON INCIDENTS_REPORTER_STATUS
-REFERENCING NEW AS N OLD AS O
+CREATE OR REPLACE TRIGGER UPDATE_INCIDENTS_TO_ALERTS_TRIGGER
+AFTER UPDATE OF ALERTIDS ON INCIDENTS_REPORTER_STATUS
+REFERENCING NEW AS N
 FOR EACH ROW
-WHEN ( O.ALERTIDS <> N.ALERTIDS )
 BEGIN ATOMIC
-	CALL DELETE_INCIDENTS_ALERTS_RELATIONS(O.UUID);
-  CALL CREATE_INCIDENTS_ALERTS_RELATIONS(N.TENANTID, N.UUID, N.ALERTIDS);
+	DECLARE shiftedAlertId CLOB;
+	DECLARE alertIdsToDecode CLOB;
+	
+	DELETE FROM INCIDENTS_ALERTS_RELATIONS WHERE INCIDENTUUID = N.UUID;
+	
+	IF COALESCE(N.ALERTIDS, '') <> '' THEN
+		SET alertIdsToDecode = N.ALERTIDS;
+		
+		WHILE LENGTH(alertIdsToDecode) > 0 DO
+			CALL SHIFT_ENCODED_DATA(alertIdsToDecode, shiftedAlertId, ',', 1);
+			INSERT INTO INCIDENTS_ALERTS_RELATIONS (INCIDENTUUID, ALERTUUID) VALUES (N.UUID, CAST(CONCAT(CONCAT(tenantId, '_'), shiftedAlertId) AS VARCHAR(255)));
+		END WHILE;
+		
+	END IF;
 END@
 
 COMMIT WORK@
